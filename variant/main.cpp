@@ -10,17 +10,95 @@
 namespace ax {
 
     struct value {
+        enum {
+            tag_null,
+            tag_bool,
+            tag_uint8,
+            tag_int8,
+            tag_uint16,
+            tag_int16,
+            tag_uint32,
+            tag_int32,
+            tag_uint64,
+            tag_int64,
+            tag_char8,
+            tag_wchar,
+            tag_char16,
+            tag_char32,
+            tag_float,
+            tag_double,
+            tag_str8,
+            tag_wstr,
+            tag_str16,
+            tag_str32,
+            tag_array,
+            tag_object
+        };
 
+        typedef std::map<std::string, value> object_t;
+        typedef std::vector<value> array_t;
 
+        value (): value (nullptr)  {}
+        value (std::nullptr_t in)  :tag (tag_null),     data (reinterpret_cast<std::uintptr_t&>(in)) {}
+        value (bool in)            :tag (tag_bool),     data (reinterpret_cast<std::uint8_t&>(in)) {}        
+        value (std::uint8_t in)    :tag (tag_uint8),    data (reinterpret_cast<std::uint8_t&>(in)) {}
+        value (std::int8_t in)     :tag (tag_int8),     data (reinterpret_cast<std::uint8_t&>(in)) {}
+        value (std::uint16_t in)   :tag (tag_uint16),   data (reinterpret_cast<std::uint16_t&>(in)) {}
+        value (std::int16_t in)    :tag (tag_int16),    data (reinterpret_cast<std::uint16_t&>(in)) {}
+        value (std::uint32_t in)   :tag (tag_uint32),   data (reinterpret_cast<std::uint32_t&>(in)) {}
+        value (std::int32_t in)    :tag (tag_int32),    data (reinterpret_cast<std::uint32_t&>(in)) {}
+        value (std::uint64_t in)   :tag (tag_uint64),   data (reinterpret_cast<std::uint64_t&>(in)) {}
+        value (std::int64_t in)    :tag (tag_int64),    data (reinterpret_cast<std::uint64_t&>(in)) {}
+        value (char in)            :tag (tag_char8),    data (reinterpret_cast<std::uint64_t&>(in)) {}
+        value (wchar_t in)         :tag (tag_wchar),    data (reinterpret_cast<std::uint64_t&>(in)) {}
+        value (char16_t in)        :tag (tag_char16),   data (reinterpret_cast<std::uint64_t&>(in)) {}
+        value (char32_t in)        :tag (tag_char32),   data (reinterpret_cast<std::uint64_t&>(in)) {}
+        value (float in)           :tag (tag_float),    data (reinterpret_cast<std::uint32_t&>(in)) {}
+        value (double in)          :tag (tag_double),   data (reinterpret_cast<std::uint64_t&>(in)) {}
+        value (std::string in)     :tag (tag_str8),     data (reinterpret_cast<std::uintptr_t>(new std::string    (std::move (in)))) {}
+        value (std::wstring in)    :tag (tag_wstr),     data (reinterpret_cast<std::uintptr_t>(new std::wstring   (std::move (in)))) {}
+        value (std::u16string in)  :tag (tag_str16),    data (reinterpret_cast<std::uintptr_t>(new std::u16string (std::move (in)))) {}
+        value (std::u32string in)  :tag (tag_str32),    data (reinterpret_cast<std::uintptr_t>(new std::u32string (std::move (in)))) {}        
+        value (const char* in)     :value (std::string    (in)) {}
+        value (const wchar_t* in)  :value (std::wstring   (in)) {}
+        value (const char16_t* in) :value (std::u16string (in)) {}
+        value (const char32_t* in) :value (std::u32string (in)) {}
+
+        explicit value (const std::initializer_list<array_t::value_type>& in) 
+            :tag (tag_array), data (reinterpret_cast<std::uint64_t> (
+                new array_t (in.begin (), in.end ())))
+        {}
+
+        explicit value (const std::initializer_list<object_t::value_type>& in)
+            :tag (tag_object), data (reinterpret_cast<std::uint64_t> (
+                new object_t (in.begin (), in.end ())))
+        {}
+        
+
+    private:
+        template <typename _Ttype>
+        auto& ref () {
+            return reinterpret_cast<_Ttype&> (data);
+        }
+
+        union {
+            std::uint64_t data;
+            array_t *pArray;
+            object_t *pObject;
+        };
+        int tag;
     };
 
-    struct object: value {
+    typedef value object;
+    typedef value array;
 
-    };
-
-    struct array: value {
-
-    };
+    //struct object: value {
+    //    
+    //};
+    //
+    //struct array: value {
+    //
+    //};
 }
 
 
@@ -46,7 +124,7 @@ int main () {
         0xFFFFFFFFFFFFFFFFull, 
         1.0f, 1.0, "A string"
     }; 
-
+    
     auto v15 = ax::object {                         // An object
         {"key0", nullptr},
         {"key1", true},
