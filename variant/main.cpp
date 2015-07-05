@@ -5,104 +5,181 @@
 #include <string>
 #include <vector>
 #include <iostream>
+#include <memory>
 
 
 namespace ax {
 
-    struct value {
-        enum {
-            tag_null,
-            tag_bool,
-            tag_uint8,
-            tag_int8,
-            tag_uint16,
-            tag_int16,
-            tag_uint32,
-            tag_int32,
-            tag_uint64,
-            tag_int64,
-            tag_char8,
-            tag_wchar,
-            tag_char16,
-            tag_char32,
-            tag_float,
-            tag_double,
-            tag_str8,
-            tag_wstr,
-            tag_str16,
-            tag_str32,
-            tag_array,
-            tag_object
+    struct value;
+
+    namespace detail {
+       
+        struct icontainer {
+            virtual ~icontainer () = default;
+            virtual const std::type_info& type () const = 0;
+            virtual const void* ptr () const = 0;
+            virtual void* ptr () = 0;
+            virtual void copy (void* to) const = 0;
+            virtual void move (void* to) = 0;
         };
 
-        typedef std::map<std::string, value> object_t;
-        typedef std::vector<value> array_t;
+        template <typename _Ptype>
+        struct primitive_container: icontainer {
+            primitive_container (_Ptype v) :_value (v) {}           
+            const std::type_info& type () const override { return typeid (_Ptype); }
+            const void* ptr () const override { return &_value; }
+            void* ptr () override { return &_value; }
+            void copy (void* to) const override {
+                new (to) primitive_container<_Ptype> (_value);
+            }
+            void move (void* to) override {
+                new (to) primitive_container<_Ptype> (_value);
+            }
+        private:
+            _Ptype _value;
+        };
 
-        value (): value (nullptr)  {}
-        value (std::nullptr_t in)  :tag (tag_null),     data (reinterpret_cast<std::uintptr_t&>(in)) {}
-        value (bool in)            :tag (tag_bool),     data (reinterpret_cast<std::uint8_t&>(in)) {}        
-        value (std::uint8_t in)    :tag (tag_uint8),    data (reinterpret_cast<std::uint8_t&>(in)) {}
-        value (std::int8_t in)     :tag (tag_int8),     data (reinterpret_cast<std::uint8_t&>(in)) {}
-        value (std::uint16_t in)   :tag (tag_uint16),   data (reinterpret_cast<std::uint16_t&>(in)) {}
-        value (std::int16_t in)    :tag (tag_int16),    data (reinterpret_cast<std::uint16_t&>(in)) {}
-        value (std::uint32_t in)   :tag (tag_uint32),   data (reinterpret_cast<std::uint32_t&>(in)) {}
-        value (std::int32_t in)    :tag (tag_int32),    data (reinterpret_cast<std::uint32_t&>(in)) {}
-        value (std::uint64_t in)   :tag (tag_uint64),   data (reinterpret_cast<std::uint64_t&>(in)) {}
-        value (std::int64_t in)    :tag (tag_int64),    data (reinterpret_cast<std::uint64_t&>(in)) {}
-        value (char in)            :tag (tag_char8),    data (reinterpret_cast<std::uint64_t&>(in)) {}
-        value (wchar_t in)         :tag (tag_wchar),    data (reinterpret_cast<std::uint64_t&>(in)) {}
-        value (char16_t in)        :tag (tag_char16),   data (reinterpret_cast<std::uint64_t&>(in)) {}
-        value (char32_t in)        :tag (tag_char32),   data (reinterpret_cast<std::uint64_t&>(in)) {}
-        value (float in)           :tag (tag_float),    data (reinterpret_cast<std::uint32_t&>(in)) {}
-        value (double in)          :tag (tag_double),   data (reinterpret_cast<std::uint64_t&>(in)) {}
-        value (std::string in)     :tag (tag_str8),     data (reinterpret_cast<std::uintptr_t>(new std::string    (std::move (in)))) {}
-        value (std::wstring in)    :tag (tag_wstr),     data (reinterpret_cast<std::uintptr_t>(new std::wstring   (std::move (in)))) {}
-        value (std::u16string in)  :tag (tag_str16),    data (reinterpret_cast<std::uintptr_t>(new std::u16string (std::move (in)))) {}
-        value (std::u32string in)  :tag (tag_str32),    data (reinterpret_cast<std::uintptr_t>(new std::u32string (std::move (in)))) {}        
-        value (const char* in)     :value (std::string    (in)) {}
-        value (const wchar_t* in)  :value (std::wstring   (in)) {}
-        value (const char16_t* in) :value (std::u16string (in)) {}
-        value (const char32_t* in) :value (std::u32string (in)) {}
+        template <typename _Ctype>
+        struct indirect_container: icontainer {
 
-        explicit value (const std::initializer_list<array_t::value_type>& in) 
-            :tag (tag_array), data (reinterpret_cast<std::uint64_t> (
-                new array_t (in.begin (), in.end ())))
-        {}
+            indirect_container (const _Ctype& v)
+                :_value (std::make_unique<_Ctype> (v))
+            {}
 
-        explicit value (const std::initializer_list<object_t::value_type>& in)
-            :tag (tag_object), data (reinterpret_cast<std::uint64_t> (
-                new object_t (in.begin (), in.end ())))
-        {}
+            indirect_container (_Ctype&& v)
+                :_value (std::make_unique<_Ctype> (std::move (v))) 
+            {}
+
+            indirect_container (indirect_container&& c)
+                :_value (std::move (c._value))
+            {}
+
+            const std::type_info& type () const override { return typeid (_Ctype); }
+            const void* ptr () const override { return _value.get (); }
+            void* ptr () override { return _value.get (); }
+            void copy (void* to) const override {
+                new (to) indirect_container<_Ctype> (*_value);
+            }
+            void move (void* to) override {
+                new (to) indirect_container<_Ctype> (std::move (*this));
+            }
+        protected:
+            std::unique_ptr<_Ctype> _value;
+        };
+
         
+    }
 
-    private:
-        template <typename _Ttype>
-        auto& ref () {
-            return reinterpret_cast<_Ttype&> (data);
+    
+
+
+    struct value {
+        struct exception: std::exception {
+            exception (const std::string& v): msg (v) {}
+            const char* what () noexcept { return msg.c_str (); }
+        private:
+            std::string msg;
+        };
+
+        struct bad_cast: exception {
+            using exception::exception;
+        };
+
+        typedef std::vector<value> vector_type;
+        typedef std::map<std::string, value> map_type;
+        typedef std::string string_type;
+
+        value () : value (nullptr) {}
+        value (std::nullptr_t v)        { new (&_container) detail::primitive_container<std::nullptr_t> (v); }
+        value (bool v)                  { new (&_container) detail::primitive_container<std::uint64_t> (v ? 1 : 0); }
+        value (std::uint64_t v)         { new (&_container) detail::primitive_container<std::uint64_t> (v); }
+        value (std::int64_t v)          { new (&_container) detail::primitive_container<std::int64_t> (v); }
+        value (std::uint32_t v)         { new (&_container) detail::primitive_container<std::uint64_t> (v); }
+        value (std::int32_t v)          { new (&_container) detail::primitive_container<std::int64_t> (v); }
+        value (std::uint16_t v)         { new (&_container) detail::primitive_container<std::uint64_t> (v); }
+        value (std::int16_t v)          { new (&_container) detail::primitive_container<std::int64_t> (v); }
+        value (std::uint8_t v)          { new (&_container) detail::primitive_container<std::uint64_t> (v); }
+        value (std::int8_t v)           { new (&_container) detail::primitive_container<std::int64_t> (v); }
+        value (double v)                { new (&_container) detail::primitive_container<double> (v); }
+        value (float v)                 { new (&_container) detail::primitive_container<float> (v); }
+        value (const char* v)           { new (&_container) detail::indirect_container<string_type> (v); }
+        value (const std::string& v)    { new (&_container) detail::indirect_container<string_type> (v); }
+
+        explicit value (const std::initializer_list<vector_type::value_type>& v) {
+            new (&_container) detail::indirect_container<vector_type> (v);
         }
 
-        union {
-            std::uint64_t data;
-            array_t *pArray;
-            object_t *pObject;
-        };
-        int tag;
+        explicit value (const std::initializer_list<map_type::value_type>& v) {
+            new (&_container) detail::indirect_container<map_type> (v);
+        }
+
+        value (const value& v) {
+            v.container ().copy (&_container);
+        }
+
+        value (value&& v) {
+            v.container ().move (&_container);
+        }
+
+        ~value () {
+            container ().~icontainer ();
+        }
+
+        value& operator = (const value& v) {
+            container ().~icontainer ();
+            v.container ().copy (&_container);
+            return *this;
+        }
+
+        value& operator = (value&& v) {
+            container ().~icontainer ();
+            v.container ().move (&_container);
+            return *this;
+        }
+
+
+        template <typename _Ttype>
+        const _Ttype& get () const {            
+            if (typeid (_Ttype) == container ().type ())
+                return *reinterpret_cast<const _Ttype*> (container ().ptr ());
+            throw bad_cast ("Bad type conversion");
+        }
+
+    private:
+        const detail::icontainer& container () const {
+            return reinterpret_cast<const detail::icontainer&> (_container);
+        }
+        detail::icontainer& container () {
+            return reinterpret_cast<detail::icontainer&> (_container);
+        }
+
+        typedef std::aligned_union_t<16u,
+            detail::primitive_container<std::nullptr_t>,
+            detail::primitive_container<std::uint64_t>,
+            detail::primitive_container<std::int64_t>,
+            detail::primitive_container<double>,
+            detail::indirect_container<std::string>,
+            detail::indirect_container<std::vector<value>>,
+            detail::indirect_container<std::map<std::string, value>>
+        > container_store;
+        
+        container_store _container;
     };
 
-    typedef value object;
-    typedef value array;
+    typedef value object, array;
+    
+    //struct object: value {};    
+    //struct array: value {};
 
-    //struct object: value {
-    //    
-    //};
-    //
-    //struct array: value {
-    //
-    //};
+    template <typename _Vtype>
+    const _Vtype& cast (const value& v) {
+        return v.get<_Vtype> ();
+    }
 }
 
 
 int main () {
+
     ax::value v0;                                   // default initialization
     ax::value v1 = nullptr;                         // nullptr
     ax::value v2 = true;                            // a boolean value
@@ -118,6 +195,8 @@ int main () {
 
     auto v12 = ax::array {};                        // An empty array
     auto v13 = ax::object {};                       // an empty object
+
+
     auto v14 = ax::array {                          // An array of values
         nullptr, true, 'a', 
        -1, 0xFFFFFFFFu, -1ll, 
@@ -137,7 +216,7 @@ int main () {
         {"key8", 1.0},
         {"key9", "A string"}
     };
-
+    
     auto v16 = ax::array {                          // array within object within array
         ax::object {
             {"key0", 1},
@@ -152,7 +231,7 @@ int main () {
             }}
         }
     };
-
+    
     auto v17 = ax::object {                         // nesting arrays within objects within objects within objects
         {"key0", ax::object {
             {"key0", ax::object {
@@ -180,6 +259,8 @@ int main () {
         }}
     };
 
+    auto v = ax::cast<std::int64_t> (v4);
+    auto o = ax::cast<ax::value::map_type> (v17).at ("key0");
 
 
     return 0;
