@@ -13,12 +13,12 @@ namespace ax {
     namespace detail {
 
         template <typename _Vtype>
-        struct icontainer {
+        struct basic_container {
             typedef typename _Vtype::string_type string_type;
             typedef typename _Vtype::vector_type vector_type;
             typedef typename _Vtype::map_type map_type;
 
-            virtual ~icontainer () = default;
+            virtual ~basic_container () = default;
             virtual const std::type_info& type () const = 0;
             virtual void copy (void*) const = 0;
             virtual void move (void*) = 0;
@@ -32,10 +32,12 @@ namespace ax {
             virtual const _Vtype&   index (const std::size_t& i) const  { throw typename _Vtype::bad_index (type (), i); }
             virtual _Vtype&         index (const string_type& k)        { throw typename _Vtype::bad_key (type (), k); }
             virtual const _Vtype&   index (const string_type& k) const  { throw typename _Vtype::bad_key (type (), k); }
+
+            virtual std::size_t     length () const                     { return 0u; }
         };
 
         template <typename _Vtype>
-        struct null_container: icontainer<_Vtype> {
+        struct null_container: basic_container<_Vtype> {
             null_container () {}
             const std::type_info& type () const override { return typeid (nullptr); }
             void copy (void* to) const  override { new (to) null_container<value> (); }
@@ -44,7 +46,7 @@ namespace ax {
 
 
         template <typename _Vtype, typename _Ptype>
-        struct primitive_container: icontainer<_Vtype> {
+        struct primitive_container: basic_container<_Vtype> {
             primitive_container (_Ptype v):_value (v) {}
             const std::type_info& type () const override { return typeid (_Ptype); }
             void copy (void* to) const  override { new (to) primitive_container<value, _Ptype> (_value); }
@@ -60,7 +62,7 @@ namespace ax {
         };
 
         template <typename _Vtype, typename _Ctype>
-        struct indirect_container: icontainer<_Vtype> {
+        struct indirect_container: basic_container<_Vtype> {
 
             indirect_container (const _Ctype& v)
                 :_value (std::make_unique<_Ctype> (v)) 
@@ -76,6 +78,8 @@ namespace ax {
 
             const std::type_info& type () const override { return typeid (_Ctype); }
 
+            std::size_t length () const override { return _value->size (); }
+
         protected:
             std::unique_ptr<_Ctype> _value;
         };
@@ -88,7 +92,7 @@ namespace ax {
             _Vtype&         index (const std::size_t& i)        override { return index (std::to_string (i)) ; }
             const _Vtype&   index (const std::size_t& i) const  override { return index (std::to_string (i)) ; }
             _Vtype&         index (const string_type& k)        override { return (*_value) [k] ; }
-            const _Vtype&   index (const string_type& k) const  override { return (*_value).at (k) ; }
+            const _Vtype&   index (const string_type& k) const  override { return (*_value).at (k); }                                             
             void            copy (void* to) const  override { new (to) map_container<value> (*_value); }
             void            move (void* to)        override { new (to) map_container<value> (std::move (*this)); }
         };
@@ -123,9 +127,11 @@ namespace ax {
 
         };
 
+
     }
 
     struct value {
+
         struct exception: std::exception {
             exception (const std::string& v): msg (v) {}
             const char* what () const noexcept override { return msg.c_str (); }
@@ -159,11 +165,10 @@ namespace ax {
                 :bad_key (type.name (), index)
             {}
         };
-
-
-        typedef std::vector<value> vector_type;
-        typedef std::map<std::string, value> map_type;
-        typedef std::string string_type;
+        
+        typedef std::string                     string_type;
+        typedef std::vector<value>              vector_type;
+        typedef std::map<std::string, value>    map_type;
 
         value () : value (nullptr) {}
         value (std::nullptr_t v)        { new (&_container) detail::null_container<value> (); }
@@ -198,17 +203,17 @@ namespace ax {
         }
 
         ~value () {
-            container ().~icontainer ();
+            container ().~basic_container ();
         }
 
         value& operator = (const value& v) {
-            container ().~icontainer ();
+            container ().~basic_container ();
             v.container ().copy (&_container);
             return *this;
         }
 
         value& operator = (value&& v) {
-            container ().~icontainer ();
+            container ().~basic_container ();
             v.container ().move (&_container);
             return *this;
         }
@@ -242,11 +247,11 @@ namespace ax {
             return static_cast<_Vtype> (val.container ().as_string ());
         }
     private:
-        const detail::icontainer<value>& container () const {
-            return reinterpret_cast<const detail::icontainer<value> &> (_container);
+        const detail::basic_container<value>& container () const {
+            return reinterpret_cast<const detail::basic_container<value> &> (_container);
         }
-        detail::icontainer<value>& container () {
-            return reinterpret_cast<detail::icontainer<value> &> (_container);
+        detail::basic_container<value>& container () {
+            return reinterpret_cast<detail::basic_container<value> &> (_container);
         }
 
         typedef std::aligned_union_t<16u,
@@ -351,7 +356,7 @@ int main () try {
         }}
     };
 
-    std::cout << ax::value::cast<std::int64_t> (v4) << "\n" ;
+    std::cout << ax::value::cast<std::int64_t> (v4) << "\n";
     //std::cout << ax::value::cast<std::string> (v17) << "\n" ;
     std::cout << ax::value::cast<int> (v17 ["key0"] ["key0"] ["key0"] [1]);
 
