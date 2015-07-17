@@ -102,10 +102,18 @@ namespace ax {
             virtual void copy (void* place) const = 0;
             virtual void move (void* place) = 0;
 
-            virtual std::uint64_t   as_uint64   () const { throw bad_cast (type ().name (), typeid (std::uint64_t   ).name ()) ; }
-            virtual std::int64_t    as_int64    () const { throw bad_cast (type ().name (), typeid (std::int64_t    ).name ()) ; }
-            virtual double          as_double   () const { throw bad_cast (type ().name (), typeid (double          ).name ()) ; }
-            virtual string_type     as_string   () const { throw bad_cast (type ().name (), typeid (string_type     ).name ()) ; }
+            virtual std::uint64_t   as_uint64   () const { throw bad_cast (type ().name (), typeid (std::uint64_t).name ()) ; }
+            virtual std::int64_t    as_int64    () const { throw bad_cast (type ().name (), typeid (std::int64_t ).name ()) ; }
+            virtual double          as_double   () const { throw bad_cast (type ().name (), typeid (double       ).name ()) ; }
+            virtual string_type     as_string   () const { throw bad_cast (type ().name (), typeid (string_type  ).name ()) ; }
+
+
+            virtual       vector_type& as_vector ()       { throw bad_cast (type ().name (), typeid (vector_type).name ()) ; }
+            virtual const vector_type& as_vector () const { throw bad_cast (type ().name (), typeid (vector_type).name ()) ; }
+            virtual       object_type& as_object ()       { throw bad_cast (type ().name (), typeid (object_type).name ()) ; }
+            virtual const object_type& as_object () const { throw bad_cast (type ().name (), typeid (object_type).name ()) ; }
+
+
             virtual string_type     serialize   (unsigned tab_size = 2u, unsigned depth  = 0u) const { return as_string () ; }
 
             virtual const _Vtype&   index       (const string_type& i) const { throw bad_index (type ().name (), i) ; }
@@ -224,6 +232,9 @@ namespace ax {
                 return value->at (i) ; 
             }
 
+                  vector_type& as_vector ()       override { return *value; }
+            const vector_type& as_vector () const override { return *value; }
+
         };
 
         template <typename _Vtype>
@@ -268,6 +279,10 @@ namespace ax {
             _Vtype& index (const std::size_t& i) override { 
                 return index (std::to_string (i)) ;
             }
+
+                  object_type& as_object ()       override { return *value; }
+            const object_type& as_object () const override { return *value; }
+
         };
 
         template <typename _Vtype>
@@ -351,9 +366,9 @@ namespace ax {
 
 
         // some utility typedefs
-        typedef std::string string_type;
-        typedef std::vector<value> vector_type;
-        typedef std::map<string_type, value> object_type;
+        typedef std::string                     string_type;
+        typedef std::vector<value>              vector_type;
+        typedef std::map<string_type, value>    object_type;
         typedef std::aligned_union_t<16u, // minimum size of the data to allocate
             detail::nullptr_container<value>,
             detail::primitive_container<value, std::uint64_t>,
@@ -435,6 +450,27 @@ namespace ax {
         static _Vtype cast (const value& v) {
             return static_cast<_Vtype> (
                 v.container ().as_string ());
+        }
+
+
+        template <typename _Vtype, detail::is_object<_Vtype, value> = 0>
+        static const _Vtype& cast (const value& v) {
+            return v.container ().as_object ();
+        }
+
+        template <typename _Vtype, detail::is_object<_Vtype, value> = 0>
+        static _Vtype& cast (value& v) {
+            return v.container ().as_object ();
+        }
+
+        template <typename _Vtype, detail::is_vector<_Vtype, value> = 0>
+        static const _Vtype& cast (const value& v) {
+            return v.container ().as_vector ();
+        }
+
+        template <typename _Vtype, detail::is_vector<_Vtype, value> = 0>
+        static _Vtype& cast (value& v) {
+            return v.container ().as_vector ();
         }
 
         string_type serialize (unsigned tab_size = 2u, unsigned indent = 0u) const {
@@ -548,6 +584,15 @@ int main () try {
     std::cout << v17 ["key0"] ["key1"] ["key0"] ["1"].serialize () << "\n";
     std::cout << v17 ["key0"] ["key0"] ["key1"] ["2"].serialize () << "\n";
 
+    for (const auto& item : ax::value::cast<ax::value::object_type> (v15)) {
+        std::cout << item.first << " -> " << 
+            ax::value::cast<std::string> (item.second) 
+            << "\n";
+    }
+
+    for (const auto& item : ax::value::cast<ax::value::vector_type> (v14)) {        
+        std::cout << ax::value::cast<std::string>(item) << "\n";
+    }
 
     auto score = 0u;
 
